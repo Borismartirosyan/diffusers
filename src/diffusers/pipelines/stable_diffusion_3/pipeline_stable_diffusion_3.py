@@ -203,6 +203,23 @@ class StableDiffusion3Pipeline(DiffusionPipeline, SD3LoraLoaderMixin, FromSingle
             if hasattr(self, "transformer") and self.transformer is not None
             else 128
         )
+    
+    def AELIF_augmentation(self, text_embeddings, text_input_ids, 
+                           tokenizer, model, alpha=10):
+        #indices = int(torch.nonzero(text_input_ids == 1, as_tuple=False)[0][-1]) #for randomization
+        index_of_main_object = 2
+        if 'T5' in str(type(model)).split('.')[-1].replace("'>", ""):
+            index_of_bottle = 4782
+            embedding_of_bottle = model.shared.weight[index_of_bottle]
+        else:
+            index_of_main_object = 3
+            index_of_bottle = 5392
+            embedding_of_bottle = model.get_input_embeddings().weight[index_of_bottle]
+        #ones[0, :, 1] += ones[0, :, 1]
+
+        text_embeddings[0, index_of_main_object, :] = embedding_of_bottle
+
+        return text_embeddings
 
     def _get_t5_prompt_embeds(
         self,
@@ -246,8 +263,15 @@ class StableDiffusion3Pipeline(DiffusionPipeline, SD3LoraLoaderMixin, FromSingle
                 "The following part of your input was truncated because `max_sequence_length` is set to "
                 f" {max_sequence_length} tokens: {removed_text}"
             )
-
+        
         prompt_embeds = self.text_encoder_3(text_input_ids.to(device))[0]
+
+        aelif = True
+        if aelif:
+            prompt_embeds = self.AELIF_augmentation(text_embeddings = prompt_embeds, 
+                                                    text_input_ids = text_input_ids, 
+                                                    tokenizer = self.tokenizer_3, 
+                                                    model = self.text_encoder_3)
 
         dtype = self.text_encoder_3.dtype
         prompt_embeds = prompt_embeds.to(dtype=dtype, device=device)
@@ -302,6 +326,13 @@ class StableDiffusion3Pipeline(DiffusionPipeline, SD3LoraLoaderMixin, FromSingle
             prompt_embeds = prompt_embeds.hidden_states[-2]
         else:
             prompt_embeds = prompt_embeds.hidden_states[-(clip_skip + 2)]
+
+        aelif = True 
+        if aelif:
+            prompt_embeds = self.AELIF_augmentation(text_embeddings = prompt_embeds, 
+                                                    text_input_ids = text_input_ids, 
+                                                    tokenizer = tokenizer, 
+                                                    model = text_encoder)
 
         prompt_embeds = prompt_embeds.to(dtype=self.text_encoder.dtype, device=device)
 
